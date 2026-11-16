@@ -229,7 +229,7 @@ const cust=id=>S.lib.custom.find(c=>c.id===id)||{};
 const isTimed=id=>/^e\d+$/.test(id)?TIMED.has(+id.slice(1)):!!cust(id).timed;
 const isBody=id=>/^e\d+$/.test(id)?(DB[+id.slice(1)]||[])[4]==="c":cust(id).eq==="c";
 function exo(id){
-  if(/^e\d+$/.test(id)){const d=DB[+id.slice(1)];if(d)return {id,name:d[0],txt:d[1],prim:d[2],sec:d[3],equip:d[4],lvl:d[5],img:imgOf(+id.slice(1)),timed:TIMED.has(+id.slice(1)),body:d[4]==="c"}}
+  if(/^e\d+$/.test(id)){const d=DB[+id.slice(1)];if(d)return {id,name:d[0],txt:d[1],prim:d[2],sec:d[3],equip:d[4],lvl:d[5],img:imgOf(+id.slice(1)),timed:TIMED.has(+id.slice(1)),body:d[4]==="c",mech:d[6]||"",force:d[7]||""}}
   const c=S.lib.custom.find(e=>e.id===id);
   if(c){const m=c.m!=null?c.m:(OLDM[c.muscle]!=null?OLDM[c.muscle]:-1);return {id,name:c.name,txt:c.txt||"",prim:Array.isArray(c.prim)?c.prim:(m>=0?[m]:[]),sec:Array.isArray(c.sec)?c.sec:[],equip:c.eq||"o",custom:true,pics:S.imgs[id]||null,timed:!!c.timed,body:c.eq==="c"}}
   return {id,name:(R()[id]&&R()[id].name)||"Exercice supprimé",txt:"",prim:[],sec:[],equip:"o"};
@@ -242,6 +242,18 @@ const pic=(e,cls,alt)=>e.img?`<span class="${cls}"><img loading="lazy" ${e.img} 
   :cls==="th"?`<span class="th ph">${esc((e.name||"?")[0].toUpperCase())}</span>`:"";
 const thumb=e=>pic(e,"th");
 const norm=s=>s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
+const SIMSTOP=new Set(["avec","sans","deux","dans","pour"]);
+const simWords=n=>norm(n).split(/[^a-z0-9]+/).filter(w=>w.length>3&&!SIMSTOP.has(w));
+function simScore(a,b,wa){
+  const sh=b.prim.filter(m=>a.prim.includes(m)).length;if(!sh)return 0;
+  let s=sh*10-(Math.max(a.prim.length,b.prim.length)-sh)*3;
+  if(a.prim[0]===b.prim[0])s+=5;
+  s+=b.sec.filter(m=>a.sec.includes(m)).length*2-Math.abs(a.sec.length-b.sec.length);
+  if(a.mech&&a.mech===b.mech)s+=5;if(a.force&&a.force===b.force)s+=3;
+  s+=simWords(b.name).filter(w=>wa.includes(w)).length*4;
+  if(!!a.timed!==!!b.timed)s-=8;if(POP.has(b.id))s+=1;
+  return Math.max(s,1);
+}
 function bodyMap(lv){
   const f=m=>lv[m]?`fill="var(--accent)" fill-opacity="${lv[m]}"`:`fill="var(--line)"`,n=`fill="var(--line)" fill-opacity=".5"`;
   const E=(a,cx,cy,rx,ry)=>[1,-1].map(k=>`<ellipse ${a} cx="${100+k*(cx-100)}" cy="${cy}" rx="${rx}" ry="${ry}"/>`).join("");
@@ -459,7 +471,8 @@ function viewSession(){
     h+=`<section class="card${ss?" ssc":""}" id="ex-${i}"><div class="row between" style="align-items:flex-start;flex-wrap:nowrap">${thumb(e)}<div class="grow"><h3><button class="hbtn" data-act="fiche-open" data-id="${esc(it.ex)}">${esc(e.name)}</button></h3>
     <p class="hint">${r&&r.last.length?"Dernière fois ("+dFmt(r.lastD)+") : "+esc(setsTxt(r.last,e)):"Première fois sur cet exercice"}${it.target?" · objectif "+it.target+" "+u:""}</p></div>
     <button class="${S.confirm===key?"btn sm danger":"icon"}" data-act="rm-item" data-i="${i}" aria-label="Retirer l'exercice">${S.confirm===key?"Retirer ?":"✕"}</button></div>
-    <input class="note" data-f="note" data-i="${i}" value="${esc(note)}" maxlength="120" autocomplete="off" placeholder="Note pour cet exercice (réglage, prise…)" aria-label="Note pour ${esc(e.name)}">`;
+    <input class="note" data-f="note" data-i="${i}" value="${esc(note)}" maxlength="120" autocomplete="off" placeholder="Note pour cet exercice (réglage, prise…)" aria-label="Note pour ${esc(e.name)}">
+    <div class="row" style="gap:6px">${i>0?`<button class="icon" data-act="mv" data-i="${i}" data-v="-1" aria-label="Monter l'exercice">↑</button>`:""}${i<a.items.length-1?`<button class="icon" data-act="mv" data-i="${i}" data-v="1" aria-label="Descendre l'exercice">↓</button>`:""}<button class="btn sm" data-act="rep-open" data-i="${i}">Remplacer</button></div>`;
     if(pl)h+=`<div class="plates"><span>Barre ${fmt(S.lib.settings.bar)} kg + par côté</span>${pl.map(p=>`<span class="plate" style="background:${PC[p][0]};color:${PC[p][1]}">${fmt(p)}</span>`).join("")}</div>`;
     it.sets.forEach((x,j)=>{
       const g=goalFor(e,it,j),xw=+x.w||0,xr=+x.r||0;let extra="";
@@ -617,7 +630,7 @@ function renderSheet(){
   const sh=$("sheet");if(!S.picker){sh.hidden=true;sh.innerHTML="";return}
   if(sh.hidden){
     sh.hidden=false;
-    sh.innerHTML=`<div class="head"><div class="row between"><h3>Exercices</h3><button class="btn sm" data-act="pick-close">${S.picker.mode==="program"?"Terminé":"Fermer"}</button></div>
+    sh.innerHTML=`<div class="head"><div class="row between" style="flex-wrap:nowrap"><h3 class="grow">${S.picker.mode==="replace"&&S.active&&S.active.items[S.picker.rep]?"Remplacer "+esc(exo(S.active.items[S.picker.rep].ex).name):"Exercices"}</h3><button class="btn sm" data-act="pick-close">${S.picker.mode==="program"?"Terminé":"Fermer"}</button></div>
     <input class="search" id="q" data-f="q" type="search" placeholder="Rechercher parmi ${DB.length} exercices" autocomplete="off" aria-label="Rechercher un exercice">
     <div class="tabs scroll" id="pm" aria-label="Filtrer par muscle"></div><div class="tabs scroll" id="pe" aria-label="Filtrer par matériel"></div></div><div id="plist"></div>`;
   }
@@ -628,13 +641,25 @@ function renderPickList(){
   $("pm").innerHTML=MORDER.map(m=>`<button class="chip" data-act="pick-muscle" data-m="${m}" aria-pressed="${P.muscle===m}">${MN[m]}</button>`).join("");
   $("pe").innerHTML=EQORDER.map(k=>`<button class="chip" data-act="pick-eq" data-v="${k}" aria-pressed="${P.eq===k}">${EQ[k]}</button>`).join("");
   const prog=P.mode==="program"?S.lib.programs.find(p=>p.id===S.edit):null,plain=!nq&&P.muscle==null&&!P.eq;
-  const all=allIds().map(exo);
-  const list=all.filter(e=>(P.muscle==null||e.prim.includes(P.muscle))&&(!P.eq||e.equip===P.eq)&&words.every(w=>norm(e.name).includes(w)))
-    .sort((a,b)=>(!nq?POP.has(b.id)-POP.has(a.id):0)||a.name.localeCompare(b.name,"fr"));
-  let h=`<p class="small muted" style="padding:10px 0 6px">${list.length} exercice${list.length>1?"s":""}${!nq?", les classiques en premier":""}. Touche un exercice pour ouvrir sa fiche, ou + pour l'ajouter.</p>`;
-  h+=list.map(e=>{const inP=prog&&prog.items.some(i=>i.ex===e.id);
-    return `<div class="pick"><button class="pinfo" data-act="fiche-open" data-id="${esc(e.id)}" data-add="1">${thumb(e)}<span><span class="name">${esc(e.name)}</span><br><span class="small muted">${esc(mName(e))} · ${e.custom?"Exercice perso":EQ[e.equip]}</span></span></button>
-    <button class="icon" data-act="pick" data-id="${esc(e.id)}" aria-label="Ajouter ${esc(e.name)}">${inP?"✓":"+"}</button></div>`}).join("");
+  const all=allIds().map(exo),repl=P.mode==="replace"&&S.active&&S.active.items[P.rep]?exo(S.active.items[P.rep].ex):null;
+  let list=all.filter(e=>(P.muscle==null||e.prim.includes(P.muscle))&&(!P.eq||e.equip===P.eq)&&words.every(w=>norm(e.name).includes(w)));
+  let h;
+  if(repl){
+    $("pm").hidden=true;const wa=simWords(repl.name),sc={};
+    list=list.filter(e=>e.id!==repl.id);list.forEach(e=>sc[e.id]=simScore(repl,e,wa));
+    if(!nq)list=list.filter(e=>sc[e.id]>0);
+    list.sort((a,b)=>sc[b.id]-sc[a.id]||a.name.localeCompare(b.name,"fr"));
+    h=`<p class="small muted" style="padding:10px 0 6px">${nq?list.length+" résultat"+(list.length>1?"s":""):list.length+" exercice"+(list.length>1?"s":"")+" qui travaillent "+(repl.prim.map(m=>MN[m]).join(", ").toLowerCase()||"les mêmes muscles")}, du plus proche au plus éloigné. Filtre par matériel si une machine est prise.</p>`;
+    h+=list.map((e,k)=>`<div class="pick"><button class="pinfo" data-act="fiche-open" data-id="${esc(e.id)}" data-add="1">${thumb(e)}<span><span class="name">${esc(e.name)}</span><br><span class="small muted">${k===0&&!nq&&sc[e.id]>1?`<b style="color:var(--ok)">Le plus proche</b> · `:""}${esc(mName(e))} · ${e.custom?"Exercice perso":EQ[e.equip]}</span></span></button>
+    <button class="btn sm" data-act="pick" data-id="${esc(e.id)}" aria-label="Remplacer par ${esc(e.name)}">Choisir</button></div>`).join("");
+  }else{
+    $("pm").hidden=false;
+    list.sort((a,b)=>(!nq?POP.has(b.id)-POP.has(a.id):0)||a.name.localeCompare(b.name,"fr"));
+    h=`<p class="small muted" style="padding:10px 0 6px">${list.length} exercice${list.length>1?"s":""}${!nq?", les classiques en premier":""}. Touche un exercice pour ouvrir sa fiche, ou + pour l'ajouter.</p>`;
+    h+=list.map(e=>{const inP=prog&&prog.items.some(i=>i.ex===e.id);
+      return `<div class="pick"><button class="pinfo" data-act="fiche-open" data-id="${esc(e.id)}" data-add="1">${thumb(e)}<span><span class="name">${esc(e.name)}</span><br><span class="small muted">${esc(mName(e))} · ${e.custom?"Exercice perso":EQ[e.equip]}</span></span></button>
+      <button class="icon" data-act="pick" data-id="${esc(e.id)}" aria-label="Ajouter ${esc(e.name)}">${inP?"✓":"+"}</button></div>`}).join("");
+  }
   h+=`<button class="btn block" style="margin-top:14px" data-act="ced-open" data-q="1" data-add="1">${nq&&!all.some(e=>norm(e.name)===nq)?"Créer « "+esc(P.q.trim())+" »":"+ Créer mon propre exercice"}</button>`;
   $("plist").innerHTML=h;
 }
@@ -650,7 +675,7 @@ function renderFiche(){
   ${e.prim.length?`<section class="card"><h3>Muscles travaillés</h3>${bodyMap(lv)}<div class="legend"><span><i class="dot"></i>Principal : ${e.prim.map(m=>MN[m]).join(", ")}</span>${e.sec.length?`<span><i class="dot sec"></i>Secondaire : ${e.sec.map(m=>MN[m]).join(", ")}</span>`:""}</div></section>`:""}
   ${(S.lib.notes||{})[e.id]?`<p class="small"><b>Ta note :</b> ${esc(S.lib.notes[e.id])}</p>`:""}
   ${r?`<section class="card"><h3>Tes chiffres</h3><p class="small">${e.timed?"Meilleur temps "+r.maxR.r+" s":r.maxW.w?(e.body?"Lest max +":"Charge max ")+fmt(r.maxW.w)+" kg × "+r.maxW.r:"Max "+r.maxR.r+" reps"}${r.e1?" · 1RM estimé "+fmt(Math.round(r.e1.v*10)/10)+" kg":""}</p><p class="small muted">Dernière fois (${dFmt(r.lastD)}) : ${esc(setsTxt(r.last,e))}</p></section>`:""}
-  ${S.fiche.add?`<button class="btn primary block" data-act="pick" data-id="${esc(e.id)}">${S.picker&&S.picker.mode==="program"?"Ajouter au programme":"Ajouter à la séance"}</button>`:""}
+  ${S.fiche.add?`<button class="btn primary block" data-act="pick" data-id="${esc(e.id)}">${S.picker&&S.picker.mode==="program"?"Ajouter au programme":S.picker&&S.picker.mode==="replace"?"Remplacer par cet exercice":"Ajouter à la séance"}</button>`:""}
   ${e.custom?`<button class="btn block" data-act="ced-open" data-id="${esc(e.id)}"${S.fiche.add?' data-add="1"':""}>Modifier cet exercice</button>`:""}
   </div>`;
 }
@@ -685,6 +710,14 @@ function loadPic(file){
 }
 function pickEx(id){
   S.fiche=null;
+  if(S.picker.mode==="replace"){
+    const i=S.picker.rep,items=S.active.items,old=items[i];S.picker=null;
+    if(old){const dn=old.sets.filter(x=>x.done),left=Math.max(1,old.sets.length-dn.length),nw=mkItem(id,left,old.target,old.rest);
+      if(old.ss){nw.ss=true}
+      if(dn.length){old.sets=dn;delete old.ss;items.splice(i+1,0,nw)}else items[i]=nw;
+      saveActive()}
+    render();const el=$("ex-"+i);if(el)try{el.scrollIntoView({block:"nearest"})}catch(e){}
+    return}
   if(S.picker.mode==="session"){S.active.items.push(mkItem(id,3,null,null));saveActive();S.picker=null;render();const m=$("main");m.scrollTop=m.scrollHeight}
   else{const p=S.lib.programs.find(x=>x.id===S.edit);if(p&&!p.items.some(i=>i.ex===id)){p.items.push({ex:id,sets:3,reps:10,rest:S.lib.settings.rest});saveLib()}
     const sc=$("plist").scrollTop;$("main").innerHTML=viewPrograms();renderPickList();renderFiche();$("plist").scrollTop=sc}
@@ -716,6 +749,8 @@ const ACT={
     saveActive();render();tick();
     if(go>=0){const el=$("ex-"+go);if(el)try{el.scrollIntoView({block:"nearest",behavior:"smooth"})}catch(e){}}
   },
+  mv(d){const a=S.active.items,i=+d.i,j=i+ +d.v;if(j<0||j>=a.length)return;[a[i],a[j]]=[a[j],a[i]];saveActive();render();const el=$("ex-"+j);if(el)try{el.scrollIntoView({block:"nearest"})}catch(e){}},
+  "rep-open"(d){S.picker={mode:"replace",rep:+d.i,q:"",muscle:null,eq:null};render()},
   ss(d){const it=S.active.items[d.i];if(it.ss)delete it.ss;else it.ss=true;saveActive();render()},
   "it-ss"(d){const p=curProg();if(!p)return;const it=p.items[d.i];if(it.ss)delete it.ss;else it.ss=true;saveLibSoon();render()},
   feel(d){S.active.feel=S.active.feel===d.v?"":d.v;saveActive();render()},

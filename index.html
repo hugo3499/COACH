@@ -124,12 +124,19 @@ svg.chart text{font-family:var(--body);font-size:11px;fill:var(--muted)}
 #sheet .search{border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:var(--surface);width:100%}
 #plist{flex:1;overflow-y:auto;padding:0 16px 24px}
 .pick{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;background:transparent;border:0;border-top:1px solid var(--line);padding:12px 0;text-align:left;min-height:48px}
-textarea.search{resize:vertical;font-size:16px}
+textarea.search{resize:vertical;font-size:16px;flex:none;min-height:88px}
+#impt{min-height:60px}
 select{border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--surface);min-height:40px}
 .th{width:66px;height:44px;border-radius:6px;overflow:hidden;background:var(--line);flex:none;display:block}
 .th img,.hero img{width:100%;display:block;transform:translateY(var(--a))}
 .th.ph{display:grid;place-items:center;font-family:var(--display);font-weight:800;font-size:22px;color:var(--muted)}
 .hero{aspect-ratio:3/2;overflow:hidden;border-radius:10px;background:var(--line);flex:none}
+.th,.hero{position:relative}
+span.hero{display:block}
+.th.two img,.hero.two img{width:100%;height:100%;object-fit:cover;transform:none;animation:none}
+.th.two img+img,.hero.two img+img{position:absolute;inset:0;opacity:0}
+.picbox{display:grid;place-items:center;border:1px dashed var(--muted);cursor:pointer;text-align:center;padding:0}
+@keyframes fl2{0%,49.99%{opacity:0}50%,100%{opacity:1}}
 @keyframes fl{0%,49.99%{transform:translateY(var(--a))}50%,100%{transform:translateY(var(--b))}}
 .hbtn{background:transparent;border:0;padding:0;font:inherit;text-transform:inherit;letter-spacing:inherit;text-align:left;color:inherit;text-decoration:underline;text-decoration-color:var(--line);text-decoration-thickness:2px;text-underline-offset:4px}
 .tabs.scroll{flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
@@ -149,7 +156,7 @@ select{border:1px solid var(--line);border-radius:8px;padding:8px;background:var
 .brow{display:grid;grid-template-columns:96px 1fr auto;gap:8px;align-items:center;font-size:14px}
 .bbar{height:10px;border-radius:5px;background:var(--line);overflow:hidden}
 .bbar i{display:block;height:100%;background:var(--accent);border-radius:5px}
-@media (prefers-reduced-motion:no-preference){ .th img,.hero img{animation:fl 2.4s linear infinite} .chk,.btn{transition:background .15s,border-color .15s} #rest .bar{transition:width .25s linear} }
+@media (prefers-reduced-motion:no-preference){ .th img,.hero img{animation:fl 2.4s linear infinite} .th.two img+img,.hero.two img+img{animation:fl2 2.4s linear infinite} .chk,.btn{transition:background .15s,border-color .15s} #rest .bar{transition:width .25s linear} }
 </style>
 </head>
 <body>
@@ -190,7 +197,7 @@ const TPL=[
 ];
 /* ---------- state ---------- */
 const S={lib:{kind:"lib",custom:[],programs:[],settings:{rest:90,bar:20}},sessions:[],active:null,
-  tab:"seance",sub:"records",edit:null,picker:null,fiche:null,openEx:null,openSess:null,loading:true,mode:"local",
+  tab:"seance",sub:"records",edit:null,picker:null,fiche:null,ced:null,imgs:{},openEx:null,openSess:null,loading:true,mode:"local",
   coach:{a:null,res:null},dl:"",saveErr:false,restEnd:0,restTotal:0,restOverAt:0,confirm:null,summary:null,note:"",copied:""};
 let _R=null;
 const $=id=>document.getElementById(id);
@@ -204,12 +211,16 @@ function imgOf(n){if(n<256)return `src="i/${n}.webp" style="--a:0;--b:-50%"`;con
 function exo(id){
   if(/^e\d+$/.test(id)){const d=DB[+id.slice(1)];if(d)return {id,name:d[0],txt:d[1],prim:d[2],sec:d[3],equip:d[4],lvl:d[5],img:imgOf(+id.slice(1))}}
   const c=S.lib.custom.find(e=>e.id===id);
-  if(c){const m=c.m!=null?c.m:(OLDM[c.muscle]!=null?OLDM[c.muscle]:-1);return {id,name:c.name,txt:"",prim:m>=0?[m]:[],sec:[],equip:"o",custom:true}}
+  if(c){const m=c.m!=null?c.m:(OLDM[c.muscle]!=null?OLDM[c.muscle]:-1);return {id,name:c.name,txt:c.txt||"",prim:Array.isArray(c.prim)?c.prim:(m>=0?[m]:[]),sec:Array.isArray(c.sec)?c.sec:[],equip:c.eq||"o",custom:true,pics:S.imgs[id]||null}}
   return {id,name:(R()[id]&&R()[id].name)||"Exercice supprimé",txt:"",prim:[],sec:[],equip:"o"};
 }
 const mName=e=>e.prim.length?MN[e.prim[0]]:"Autre";
 const allIds=()=>DB.map((_,i)=>"e"+i).concat(S.lib.custom.map(c=>c.id));
-const thumb=e=>e.img?`<span class="th"><img loading="lazy" ${e.img} alt=""></span>`:`<span class="th ph">${esc((e.name||"?")[0].toUpperCase())}</span>`;
+const okPic=u=>typeof u==="string"&&u.indexOf("data:image/")===0&&u.indexOf('"')<0;
+const pic=(e,cls,alt)=>e.img?`<span class="${cls}"><img loading="lazy" ${e.img} alt="${alt||""}"></span>`
+  :e.pics&&okPic(e.pics.a)?`<span class="${cls} two"><img src="${e.pics.a}" alt="${alt||""}">${okPic(e.pics.b)?`<img src="${e.pics.b}" alt="">`:""}</span>`
+  :cls==="th"?`<span class="th ph">${esc((e.name||"?")[0].toUpperCase())}</span>`:"";
+const thumb=e=>pic(e,"th");
 const norm=s=>s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
 function bodyMap(lv){
   const f=m=>lv[m]?`fill="var(--accent)" fill-opacity="${lv[m]}"`:`fill="var(--line)"`,n=`fill="var(--line)" fill-opacity=".5"`;
@@ -278,17 +289,17 @@ const PRL={charge:"Record de charge",["1rm"]:"Record de 1RM estimé",reps:"Recor
 /* ---------- storage ---------- */
 let col=null;const pend={},busy={};
 const LS={get(k){try{return JSON.parse(localStorage.getItem("muscu:"+k))}catch(e){return null}},
-  set(k,v){try{v==null?localStorage.removeItem("muscu:"+k):localStorage.setItem("muscu:"+k,JSON.stringify(v))}catch(e){}}};
+  set(k,v){try{v==null?localStorage.removeItem("muscu:"+k):localStorage.setItem("muscu:"+k,JSON.stringify(v));return true}catch(e){return false}}};
 function localPut(key,data){
-  if(key==="lib"||key==="active")return LS.set(key,data);
-  const a=(LS.get("s")||[]).filter(x=>x.id!==key);if(data)a.push(data);LS.set("s",a);
+  if(key==="lib"||key==="active"||key.indexOf("img-")===0)return LS.set(key,data);
+  const a=(LS.get("s")||[]).filter(x=>x.id!==key);if(data)a.push(data);return LS.set("s",a);
 }
 function put(key,data){pend[key]={data:data?clone(data):null};if(!busy[key])flush(key)}
 async function flush(key){
   busy[key]=true;
   while(pend[key]){
     const {data}=pend[key];delete pend[key];
-    if(S.mode!=="cloud"){localPut(key,data);continue}
+    if(S.mode!=="cloud"){const ok=localPut(key,data);if(ok===false&&!S.saveErr){S.saveErr=true;render()}else if(ok!==false&&S.saveErr){S.saveErr=false;render()}continue}
     let ok=false;
     for(let i=0;i<2&&!ok;i++){
       try{data?await col.doc(key).set(data):await col.doc(key).delete();ok=true}
@@ -317,7 +328,7 @@ async function boot(){
       col=db.collection("data/users/"+id);
       const snap=await Promise.race([col.limit(1000).get(),new Promise((_,rej)=>setTimeout(()=>rej(new Error("timeout")),10000))]);
       let lib=null;
-      snap.docs.forEach(d=>{const x=d.data();if(!x)return;if(d.id==="lib")lib=clone(x);else if(d.id==="active")S.active=clone(x);else if(x.kind==="session")S.sessions.push(clone(x))});
+      snap.docs.forEach(d=>{const x=d.data();if(!x)return;if(d.id==="lib")lib=clone(x);else if(d.id==="active")S.active=clone(x);else if(x.kind==="session")S.sessions.push(clone(x));else if(x.kind==="img")S.imgs[d.id.slice(4)]=clone(x)});
       S.mode="cloud";
       S.lib=normLib(lib||loc.lib);if(!lib&&loc.lib)put("lib",S.lib);
       const have=new Set(S.sessions.map(s=>s.id));
@@ -325,7 +336,7 @@ async function boot(){
       if(loc.s.length)LS.set("s",null);
     }catch(e){col=null}
   }
-  if(S.mode!=="cloud"){S.lib=normLib(loc.lib);S.active=loc.active;S.sessions=loc.s}
+  if(S.mode!=="cloud"){S.lib=normLib(loc.lib);S.active=loc.active;S.sessions=loc.s;S.lib.custom.forEach(c=>{const v=LS.get("img-"+c.id);if(v&&v.a)S.imgs[c.id]=v})}
   if(S.active&&!Array.isArray(S.active.items))S.active=null;
   S.lib.programs.forEach(p=>p.items.forEach(i=>i.ex=cid(i.ex)));if(S.active)S.active.items.forEach(i=>i.ex=cid(i.ex));S.sessions.forEach(s=>s.items.forEach(i=>i.ex=cid(i.ex)));
   S.coach.a=Object.assign(coachDefault(),S.lib.coach||{});
@@ -363,7 +374,7 @@ const PC={25:["#D6332A","#fff"],20:["#2456C8","#fff"],15:["#E9B400","#1a1a1a"],1
 /* ---------- views ---------- */
 function banners(){
   let h="";
-  if(S.saveErr)h+=`<p class="banner err">Le dernier enregistrement n'est pas passé. Vérifie ta connexion : la prochaine modification relancera l'envoi.</p>`;
+  if(S.saveErr)h+=`<p class="banner err">${S.mode==="cloud"?"Le dernier enregistrement n'est pas passé. Vérifie ta connexion : la prochaine modification relancera l'envoi.":"L'enregistrement a échoué : la mémoire de l'appli est sans doute pleine. Exporte une sauvegarde, puis retire des photos d'exercices perso."}</p>`;
   else if(!S.loading&&S.mode==="local"&&!SA)h+=`<p class="banner">Tes données sont gardées sur cet appareil uniquement et peuvent s'effacer. Ouvre la page connecté à ton compte Claude pour les retrouver partout.</p>`;
   return h;
 }
@@ -516,8 +527,9 @@ function viewProgress(){
     <textarea id="impt" class="search" rows="2" placeholder="Ou colle ici une sauvegarde copiée" aria-label="Sauvegarde à importer"></textarea><button class="btn" data-act="import-text">Importer le texte collé</button>
     ${S.copied?`<p class="small"><b>${esc(S.copied)}</b></p>`:""}</section>
     ${SA&&"caches" in window?`<section class="card"><h3>Hors ligne</h3><p class="small muted">L'appli s'ouvre sans réseau. Les images se chargent à la première consultation ; tu peux toutes les télécharger d'avance (environ 10 Mo).</p><button class="btn" data-act="dl-img">${esc(S.dl||"Télécharger toutes les images")}</button></section>`:""}`;
-    if(S.lib.custom.length)h+=`<section class="card"><h3>Mes exercices</h3><div>${S.lib.custom.map(e=>`<div class="item"><span class="grow"><span class="name">${esc(e.name)}</span><br><span class="small muted">${esc(mName(exo(e.id)))}</span></span>
-    <button class="btn sm ghost danger" data-act="ex-del" data-id="${esc(e.id)}">${S.confirm==="ex-del:"+e.id?"Confirmer":"Supprimer"}</button></div>`).join("")}</div></section>`;
+    h+=`<section class="card"><h3>Mes exercices</h3><div>${S.lib.custom.map(c=>{const e=exo(c.id);return `<div class="item">${thumb(e)}<span class="grow"><button class="hbtn name" data-act="fiche-open" data-id="${esc(c.id)}">${esc(e.name)}</button><br><span class="small muted">${esc(mName(e))}</span></span>
+    <button class="btn sm" data-act="ced-open" data-id="${esc(c.id)}">Modifier</button><button class="btn sm ghost danger" data-act="ex-del" data-id="${esc(c.id)}">${S.confirm==="ex-del:"+c.id?"Confirmer":"Supprimer"}</button></div>`}).join("")||`<p class="small muted">Aucun exercice perso pour l'instant.</p>`}</div>
+    <button class="btn" data-act="ced-open">+ Créer un exercice</button></section>`;
   }
   return h;
 }
@@ -551,23 +563,51 @@ function renderPickList(){
   h+=list.map(e=>{const inP=prog&&prog.items.some(i=>i.ex===e.id);
     return `<div class="pick"><button class="pinfo" data-act="fiche-open" data-id="${esc(e.id)}" data-add="1">${thumb(e)}<span><span class="name">${esc(e.name)}</span><br><span class="small muted">${esc(mName(e))} · ${e.custom?"Exercice perso":EQ[e.equip]}</span></span></button>
     <button class="icon" data-act="pick" data-id="${esc(e.id)}" aria-label="Ajouter ${esc(e.name)}">${inP?"✓":"+"}</button></div>`}).join("");
-  if(nq&&!all.some(e=>norm(e.name)===nq))h+=`<div class="pick" style="flex-wrap:wrap"><span class="name">Créer « ${esc(P.q.trim())} »</span><span class="row"><select id="newMuscle" aria-label="Muscle principal">${MORDER.map(m=>`<option value="${m}"${P.muscle===m?" selected":""}>${MN[m]}</option>`).join("")}<option value="-1"${P.muscle==null?" selected":""}>Autre</option></select>
-    <button class="btn sm" data-act="create-ex">Créer</button></span></div>`;
+  h+=`<button class="btn block" style="margin-top:14px" data-act="ced-open" data-q="1" data-add="1">${nq&&!all.some(e=>norm(e.name)===nq)?"Créer « "+esc(P.q.trim())+" »":"+ Créer mon propre exercice"}</button>`;
   $("plist").innerHTML=h;
 }
 function renderFiche(){
-  const el=$("fiche");if(!S.fiche){el.hidden=true;el.innerHTML="";return}
+  const el=$("fiche");if(S.ced)return renderCed(el);el.dataset.mode="";if(!S.fiche){el.hidden=true;el.innerHTML="";return}
   const e=exo(S.fiche.id),r=R()[e.id],lv={};e.sec.forEach(m=>lv[m]=.4);e.prim.forEach(m=>lv[m]=1);
   el.hidden=false;
   el.innerHTML=`<div class="head"><div class="row between" style="flex-wrap:nowrap"><h3 class="grow">${esc(e.name)}</h3><button class="btn sm" data-act="fiche-close">Fermer</button></div></div>
   <div class="fbody">
-  ${e.img?`<div class="hero"><img ${e.img} alt="Démonstration du mouvement : position de départ puis d'arrivée"></div>`:""}
-  <div class="tabs"><span class="chip">${e.custom?"Exercice perso":EQ[e.equip]}</span>${e.lvl!=null?`<span class="chip">${LV[e.lvl]}</span>`:""}</div>
+  ${pic(e,"hero","Démonstration du mouvement : position de départ puis d'arrivée")}
+  <div class="tabs">${e.custom?`<span class="chip">Exercice perso</span>`:""}<span class="chip">${EQ[e.equip]}</span>${e.lvl!=null?`<span class="chip">${LV[e.lvl]}</span>`:""}</div>
   ${e.txt?`<p>${esc(e.txt)}</p>`:""}
   ${e.prim.length?`<section class="card"><h3>Muscles travaillés</h3>${bodyMap(lv)}<div class="legend"><span><i class="dot"></i>Principal : ${e.prim.map(m=>MN[m]).join(", ")}</span>${e.sec.length?`<span><i class="dot sec"></i>Secondaire : ${e.sec.map(m=>MN[m]).join(", ")}</span>`:""}</div></section>`:""}
   ${r?`<section class="card"><h3>Tes chiffres</h3><p class="small">${r.maxW.w?"Charge max "+fmt(r.maxW.w)+" kg × "+r.maxW.r:"Max "+r.maxR.r+" reps"}${r.e1?" · 1RM estimé "+fmt(Math.round(r.e1.v*10)/10)+" kg":""}</p><p class="small muted">Dernière fois (${dFmt(r.lastD)}) : ${esc(setsTxt(r.last))}</p></section>`:""}
   ${S.fiche.add?`<button class="btn primary block" data-act="pick" data-id="${esc(e.id)}">${S.picker&&S.picker.mode==="program"?"Ajouter au programme":"Ajouter à la séance"}</button>`:""}
+  ${e.custom?`<button class="btn block" data-act="ced-open" data-id="${esc(e.id)}"${S.fiche.add?' data-add="1"':""}>Modifier cet exercice</button>`:""}
   </div>`;
+}
+function renderCed(el){
+  const c=S.ced,old=el.querySelector(".fbody"),sc=old&&el.dataset.mode==="ced"?old.scrollTop:0,lv={};
+  c.sec.forEach(m=>lv[m]=.4);c.prim.forEach(m=>lv[m]=1);
+  const chips=k=>MORDER.map(m=>`<button class="chip" data-act="ced-m" data-k="${k}" data-m="${m}" aria-pressed="${c[k].includes(m)}">${MN[m]}</button>`).join("");
+  const ph=(k,label)=>`<div class="grow"><p class="small muted" style="margin-bottom:4px">${label}</p><label class="hero two picbox">${c[k]?`<img src="${c[k]}" alt="Photo ${label.toLowerCase()}">`:`<span class="muted small">Choisir une photo</span>`}<input type="file" accept="image/*" id="cp${k}" hidden></label>${c[k]?`<button class="btn sm ghost" style="margin-top:6px" data-act="ced-rmpic" data-k="${k}">Retirer</button>`:""}</div>`;
+  el.hidden=false;el.dataset.mode="ced";
+  el.innerHTML=`<div class="head"><div class="row between" style="flex-wrap:nowrap"><h3 class="grow">${c.id?"Modifier l'exercice":"Nouvel exercice"}</h3><button class="btn sm" data-act="ced-close">Annuler</button></div></div>
+  <div class="fbody">
+  <input class="search" id="cname" data-f="cname" value="${esc(c.name)}" placeholder="Nom de l'exercice" maxlength="60" autocomplete="off" aria-label="Nom de l'exercice">
+  <section class="card"><div><p class="name">Muscles principaux</p><p class="hint">Ceux que l'exercice cible.</p></div><div class="tabs">${chips("prim")}</div></section>
+  <section class="card"><div><p class="name">Muscles secondaires</p><p class="hint">Ceux qui aident sans être la cible.</p></div><div class="tabs">${chips("sec")}</div></section>
+  ${c.prim.length||c.sec.length?`<section class="card">${bodyMap(lv)}</section>`:""}
+  <section class="card"><p class="name">Matériel</p><div class="tabs">${EQORDER.map(k=>`<button class="chip" data-act="ced-eq" data-v="${k}" aria-pressed="${c.eq===k}">${EQ[k]}</button>`).join("")}</div></section>
+  <section class="card"><div><p class="name">Photos</p><p class="hint">Une en position de départ, une en position d'arrivée : elles alternent comme pour les autres exercices. Cadre en paysage si possible.</p></div>
+  <div class="row" style="align-items:flex-start;flex-wrap:nowrap">${ph("a","Départ")}${ph("b","Arrivée")}</div></section>
+  <textarea class="search" id="ctxt" data-f="ctxt" rows="3" maxlength="300" placeholder="Explication ou consignes (facultatif)" aria-label="Explication">${esc(c.txt)}</textarea>
+  ${c.err?`<p class="banner err">${esc(c.err)}</p>`:""}
+  <button class="btn primary block" data-act="ced-save">Enregistrer</button>
+  </div>`;
+  el.querySelector(".fbody").scrollTop=sc;
+}
+function loadPic(file){
+  return new Promise((res,rej)=>{const img=new Image(),url=URL.createObjectURL(file);
+    img.onload=()=>{try{const W=300,H=200,cv=document.createElement("canvas");cv.width=W;cv.height=H;
+      const k=Math.max(W/img.naturalWidth,H/img.naturalHeight),w=img.naturalWidth*k,h=img.naturalHeight*k,g=cv.getContext("2d");
+      g.fillStyle="#fff";g.fillRect(0,0,W,H);g.drawImage(img,(W-w)/2,(H-h)/2,w,h);URL.revokeObjectURL(url);res(cv.toDataURL("image/jpeg",.72))}catch(e){rej(e)}};
+    img.onerror=()=>rej(new Error("image"));img.src=url});
 }
 function pickEx(id){
   S.fiche=null;
@@ -609,8 +649,23 @@ const ACT={
   "pick-close"(){S.picker=null;render()},
   "pick-muscle"(d){S.picker.muscle=S.picker.muscle===+d.m?null:+d.m;renderPickList()},
   pick(d){pickEx(d.id)},
-  "create-ex"(){const name=S.picker.q.trim();if(!name)return;const e={id:uid("x"),name:name.slice(0,60),m:+$("newMuscle").value};
-    S.lib.custom.push(e);saveLib();S.picker.q="";const q=$("q");if(q)q.value="";pickEx(e.id)},
+  "ced-open"(d){
+    const c=d.id?S.lib.custom.find(x=>x.id===d.id):null,e=c?exo(c.id):null,P=S.picker;
+    S.ced={id:c?c.id:null,name:c?c.name:(d.q&&P?P.q.trim().slice(0,60):""),prim:e?e.prim.slice():(P&&P.muscle!=null?[P.muscle]:[]),sec:e?e.sec.slice():[],
+      eq:c?(c.eq||"o"):(P&&P.eq)||"h",txt:c?(c.txt||""):"",a:e&&e.pics&&okPic(e.pics.a)?e.pics.a:"",b:e&&e.pics&&okPic(e.pics.b)?e.pics.b:"",add:!!d.add,err:""};
+    S.fiche=null;renderFiche()},
+  "ced-close"(){S.ced=null;renderFiche()},
+  "ced-m"(d){const c=S.ced,m=+d.m,o=d.k==="prim"?"sec":"prim",i=c[d.k].indexOf(m);
+    if(i>=0)c[d.k].splice(i,1);else{c[d.k].push(m);const j=c[o].indexOf(m);if(j>=0)c[o].splice(j,1)}renderFiche()},
+  "ced-eq"(d){S.ced.eq=d.v;renderFiche()},
+  "ced-rmpic"(d){S.ced[d.k]="";renderFiche()},
+  "ced-save"(){
+    const c=S.ced,name=c.name.trim();if(!name){c.err="Donne un nom à l'exercice.";return renderFiche()}
+    let x=c.id?S.lib.custom.find(e=>e.id===c.id):null;if(!x){x={id:uid("x")};S.lib.custom.push(x)}
+    x.name=name.slice(0,60);x.prim=c.prim.slice();x.sec=c.sec.slice();x.eq=c.eq;x.txt=c.txt.trim().slice(0,300);delete x.m;delete x.muscle;
+    const a=c.a||c.b,b=c.a&&c.b?c.b:"";
+    if(a){S.imgs[x.id]={kind:"img",a,b};put("img-"+x.id,S.imgs[x.id])}else if(S.imgs[x.id]){delete S.imgs[x.id];put("img-"+x.id,null)}
+    saveLib();const add=c.add&&S.picker;S.ced=null;if(add)pickEx(x.id);else render()},
   "prog-new"(){const p={id:uid("p"),name:"",items:[]};S.lib.programs.push(p);S.edit=p.id;saveLib();render();$("main").scrollTop=0;const el=$("pname");if(el)el.focus()},
   "prog-edit"(d){S.edit=d.id;render();$("main").scrollTop=0},
   "prog-back"(){const p=curProg();if(p&&!p.name.trim()){p.name="Programme "+(S.lib.programs.indexOf(p)+1);saveLib()}S.edit=null;render()},
@@ -625,7 +680,7 @@ const ACT={
   "open-ex"(d){S.openEx=S.openEx===d.id?null:d.id;render()},
   "open-sess"(d){S.openSess=S.openSess===d.id?null:d.id;render()},
   "del-sess"(d){if(armed("del-sess:"+d.id)){S.sessions=S.sessions.filter(s=>s.id!==d.id);_R=null;put(d.id,null);if(S.summary===d.id)S.summary=null;render()}},
-  "ex-del"(d){if(armed("ex-del:"+d.id)){S.lib.custom=S.lib.custom.filter(e=>e.id!==d.id);S.lib.programs.forEach(p=>p.items=p.items.filter(i=>i.ex!==d.id));saveLib();render()}},
+  "ex-del"(d){if(armed("ex-del:"+d.id)){S.lib.custom=S.lib.custom.filter(e=>e.id!==d.id);if(S.imgs[d.id]){delete S.imgs[d.id];put("img-"+d.id,null)}S.lib.programs.forEach(p=>p.items=p.items.filter(i=>i.ex!==d.id));saveLib();render()}},
   cfg(d){const st=S.lib.settings;if(d.k==="rest")st.rest=Math.max(0,Math.min(600,st.rest+ +d.v));else st.bar=Math.max(0,Math.min(30,st.bar+ +d.v));saveLibSoon();render()},
   copy(){const txt=JSON.stringify(backup());
     const fin=m=>{S.copied=m;render()};
@@ -668,16 +723,19 @@ document.addEventListener("input",e=>{
   else if(f==="sname"){S.active.name=t.value.slice(0,60);saveActiveSoon()}
   else if(f==="pname"){const p=curProg();if(p){p.name=t.value.slice(0,60);saveLibSoon()}}
   else if(f==="q"){S.picker.q=t.value;renderPickList()}
+  else if(f==="cname"){if(S.ced)S.ced.name=t.value}
+  else if(f==="ctxt"){if(S.ced)S.ced.txt=t.value}
 });
 document.addEventListener("focusin",e=>{if(e.target.classList&&e.target.classList.contains("numin"))try{e.target.select()}catch(_){}});
 document.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.classList&&e.target.classList.contains("numin")){e.preventDefault();e.target.blur()}});
 /* ---------- backup ---------- */
-const backup=()=>({app:"carnet-muscu",v:1,date:new Date().toISOString(),programmes:S.lib.programs,exercices:S.lib.custom,reglages:S.lib.settings,coach:S.lib.coach,seances:S.sessions});
+const backup=()=>({app:"carnet-muscu",v:1,date:new Date().toISOString(),programmes:S.lib.programs,exercices:S.lib.custom,reglages:S.lib.settings,coach:S.lib.coach,images:S.imgs,seances:S.sessions});
 function doImport(txt){
   let d=null;try{d=JSON.parse(txt)}catch(e){}
   if(!d||typeof d!=="object"||!(Array.isArray(d.programmes)||Array.isArray(d.seances))){S.copied="Ce contenu n'est pas une sauvegarde du carnet.";return render()}
   const okItems=a=>Array.isArray(a)&&a.every(i=>i&&typeof i.ex==="string");
-  if(Array.isArray(d.exercices))S.lib.custom=d.exercices.filter(e=>e&&typeof e.id==="string"&&typeof e.name==="string");
+  if(Array.isArray(d.exercices)){S.lib.custom=d.exercices.filter(e=>e&&typeof e.id==="string"&&typeof e.name==="string");
+    if(d.images&&typeof d.images==="object")S.lib.custom.forEach(c=>{const v=d.images[c.id];if(v&&okPic(v.a)){S.imgs[c.id]={kind:"img",a:v.a,b:okPic(v.b)?v.b:""};put("img-"+c.id,S.imgs[c.id])}})}
   let np=0,ns=0;
   if(Array.isArray(d.programmes)){S.lib.programs=d.programmes.filter(p=>p&&typeof p.id==="string"&&okItems(p.items)).map(p=>({id:p.id,name:String(p.name||""),coach:!!p.coach,
     items:p.items.map(i=>({ex:cid(i.ex),sets:+i.sets||3,reps:+i.reps||10,rest:+i.rest||0}))}));np=S.lib.programs.length}
@@ -690,7 +748,9 @@ function doImport(txt){
     S.sessions.push(o);put(o.id,o);ns++});
   _R=null;saveLib();S.copied="Import terminé : "+np+" programme"+(np>1?"s":"")+", "+ns+" séance"+(ns>1?"s":"")+" ajoutée"+(ns>1?"s":"")+".";render();
 }
-document.addEventListener("change",e=>{const t=e.target;if(t.id!=="impf"||!t.files||!t.files[0])return;
+document.addEventListener("change",e=>{const t=e.target;if(!t.files||!t.files[0])return;
+  if(t.id==="cpa"||t.id==="cpb"){const k=t.id.slice(2);loadPic(t.files[0]).then(u=>{if(S.ced){S.ced[k]=u;S.ced.err="";renderFiche()}},()=>{if(S.ced){S.ced.err="Impossible de lire cette image.";renderFiche()}});return}
+  if(t.id!=="impf")return;
   const r=new FileReader();r.onload=()=>doImport(String(r.result||""));r.onerror=()=>{S.copied="Lecture du fichier impossible.";render()};r.readAsText(t.files[0])});
 /* ---------- coach ---------- */
 const CQ=[
@@ -833,7 +893,7 @@ function tick(){
   }else if(!r.hidden){r.hidden=true;r.innerHTML=""}
 }
 setInterval(tick,250);
-function route(){const t=location.hash.slice(1);S.tab=["seance","programmes","coach","progres"].includes(t)?t:"seance";S.confirm=null;S.picker=null;S.fiche=null;render();$("main").scrollTop=0}
+function route(){const t=location.hash.slice(1);S.tab=["seance","programmes","coach","progres"].includes(t)?t:"seance";S.confirm=null;S.picker=null;S.fiche=null;S.ced=null;render();$("main").scrollTop=0}
 window.addEventListener("hashchange",route);
 S.tab=["seance","programmes","coach","progres"].includes(location.hash.slice(1))?location.hash.slice(1):"seance";
 boot();

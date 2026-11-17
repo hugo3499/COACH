@@ -288,6 +288,18 @@ const setsTxt=(sets,e)=>sets.map(x=>fmtSet(x,e)).join(" · ");
 const volOf=s=>s.items.reduce((a,it)=>{if(isTimed(it.ex))return a;const b=s.bw&&isBody(it.ex)?s.bw:0;return a+it.sets.reduce((q,x)=>q+(x.w+b)*x.r,0)},0);
 const FEEL=[["1","Facile"],["2","Bien"],["3","Dur"],["4","Épuisant"]];
 const feelName=v=>(FEEL.find(f=>f[0]===String(v))||[])[1]||"";
+function estSec(items,warm){
+  let t=warm?300:0;
+  items.forEach((it,i)=>{
+    const n=Math.max(0,+it.sets||0);if(!n)return;
+    const tm=isTimed(it.ex),r=+it.reps||10,work=tm?r+15:r*3+20,linked=it.ss&&i<items.length-1;
+    t+=n*work+(n-1)*(linked?15:(+it.rest||0));
+    if(i<items.length-1)t+=linked?15:Math.max(60,+it.rest||0);
+  });
+  return t;
+}
+function durTxt(sec){const m=Math.max(5,Math.round(sec/300)*5);return "≈ "+(m<60?m+" min":Math.floor(m/60)+" h"+(m%60?" "+String(m%60).padStart(2,"0"):""))}
+const progDur=p=>p.items.length?durTxt(estSec(p.items,true)):"";
 function weekStart(t){const d=new Date(t);d.setHours(0,0,0,0);d.setDate(d.getDate()-((d.getDay()+6)%7));return d.getTime()}
 
 /* ---------- records ---------- */
@@ -444,7 +456,7 @@ function viewHome(){
     S.lib.programs.forEach(p=>{
       const last=[...S.sessions].reverse().find(s=>s.pid===p.id);
       h+=`<section class="card"><div class="row between"><div class="grow"><h3>${esc(p.name||"Sans nom")}</h3>
-      <p class="hint">${p.items.length} exercice${p.items.length>1?"s":""}${last?" · fait le "+dFmt(last.start):""}</p></div>
+      <p class="hint">${p.items.length} exercice${p.items.length>1?"s":""}${p.items.length?" · "+progDur(p):""}${last?" · fait le "+dFmt(last.start):""}</p></div>
       <button class="btn primary" data-act="start" data-id="${esc(p.id)}">Démarrer</button></div>
       <p class="small muted">${p.items.map(i=>esc(exo(i.ex).name)).join(" · ")||"Aucun exercice pour l'instant"}</p></section>`;
     });
@@ -461,7 +473,9 @@ function tplCards(){
 }
 function viewSession(){
   const a=S.active;let done=0,tot=0;a.items.forEach(it=>it.sets.forEach(x=>{tot++;if(x.done)done++}));
-  let h=`<header class="top"><div><p class="eyebrow">En cours · <span id="clock" class="num">${clock(Date.now()-a.start)}</span> · ${done}/${tot} séries</p>
+  const restItems=a.items.map(it=>{const u=it.sets.filter(x=>!x.done);return {ex:it.ex,sets:u.length,reps:(u.length?+u[0].r:0)||it.target||10,rest:it.rest,ss:it.ss}}).filter(it=>it.sets);
+  const endAt=done<tot?new Date(Date.now()+estSec(restItems,!done)*1000+Math.max(0,S.restEnd-Date.now())).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}):"";
+  let h=`<header class="top"><div><p class="eyebrow">En cours · <span id="clock" class="num">${clock(Date.now()-a.start)}</span> · ${done}/${tot} séries${endAt?" · fin vers "+endAt:""}</p>
   <input class="title-in" id="sname" data-f="sname" value="${esc(a.name)}" aria-label="Nom de la séance"></div>
   <button class="btn primary" data-act="finish">Terminer</button></header><div class="knurl"></div>`+banners();
   if(S.note)h+=`<p class="banner err">${esc(S.note)}</p>`;
@@ -499,7 +513,7 @@ function viewPrograms(){
   if(S.edit){const p=S.lib.programs.find(x=>x.id===S.edit);if(p)return viewProgEdit(p);S.edit=null}
   let h=head("Programmes",S.lib.programs.length+" programme"+(S.lib.programs.length>1?"s":""),`<button class="btn primary" data-act="prog-new">Nouveau</button>`)+banners();
   S.lib.programs.forEach(p=>{
-    h+=`<section class="card"><div class="row between"><div class="grow"><h3>${esc(p.name||"Sans nom")}</h3><p class="hint">${p.items.length} exercice${p.items.length>1?"s":""}</p></div>
+    h+=`<section class="card"><div class="row between"><div class="grow"><h3>${esc(p.name||"Sans nom")}</h3><p class="hint">${p.items.length} exercice${p.items.length>1?"s":""}${p.items.length?" · "+progDur(p):""}</p></div>
     <button class="btn" data-act="prog-edit" data-id="${esc(p.id)}">Modifier</button></div>
     <p class="small muted">${p.items.map(i=>esc(exo(i.ex).name)+" "+i.sets+"×"+i.reps).join(" · ")||"Aucun exercice pour l'instant"}</p></section>`;
   });
@@ -511,7 +525,7 @@ function stepper(k,i,val,lo,label){
 }
 function viewProgEdit(p){
   const key="prog-del:"+p.id;
-  let h=`<header class="top"><div><p class="eyebrow">Programme</p><input class="title-in" id="pname" data-f="pname" value="${esc(p.name)}" placeholder="Nom du programme" aria-label="Nom du programme"></div>
+  let h=`<header class="top"><div><p class="eyebrow">Programme${p.items.length?" · durée estimée "+progDur(p):""}</p><input class="title-in" id="pname" data-f="pname" value="${esc(p.name)}" placeholder="Nom du programme" aria-label="Nom du programme"></div>
   <button class="btn" data-act="prog-back">Terminé</button></header><div class="knurl"></div>`;
   p.items.forEach((it,i)=>{
     h+=`<section class="card${it.ss||(i>0&&p.items[i-1].ss)?" ssc":""}"><div class="row between" style="flex-wrap:nowrap">${thumb(exo(it.ex))}<h3 class="grow"><button class="hbtn" data-act="fiche-open" data-id="${esc(it.ex)}">${esc(exo(it.ex).name)}</button></h3>
@@ -966,6 +980,10 @@ function coachBuild(a){
       if(a.age==="d"){if(r<8)r=8;rest+=15}else if(a.age==="c"&&r<6)r=6;
       items.push({ex:"e"+c[0],sets:s,reps:r,rest});
     }
+    const goal=(+a.dur||60)*60,big=items.filter(it=>!/^e(24|38|56|15|59|61|4)$/.test(it.ex));
+    for(let k=0;k<12&&estSec(items,true)<goal-450;k++){const it=big[k%Math.max(1,big.length)];if(!it||it.sets>=6)break;it.sets++}
+    while(items.length>3&&estSec(items,true)>goal+150)items.pop();
+    while(estSec(items,true)>goal+150){const it=items.slice().sort((x,y)=>y.sets-x.sets)[0];if(!it||it.sets<=2)break;it.sets--}
     return {name:pl[1],items};
   }).filter(p=>p.items.length);
   const notes=[];
@@ -993,7 +1011,7 @@ function viewCoach(){
     h+=`<div class="knurl" id="cores"></div><section class="card"><p class="eyebrow">Ta semaine</p><h3>${res.split}</h3><p>${res.programs.length} séance${res.programs.length>1?"s":""} par semaine. ${res.sched}.</p>
     ${res.notes.map(n=>`<p class="small muted">${n}</p>`).join("")}</section>`;
     res.programs.forEach(p=>{
-      h+=`<section class="card"><h3>${esc(p.name)}</h3><div>${p.items.map(it=>{const e=exo(it.ex);return `<div class="item">${thumb(e)}<span class="grow"><button class="hbtn name" data-act="fiche-open" data-id="${it.ex}">${esc(e.name)}</button><br><span class="small muted">${it.sets} × ${it.reps}${isTimed(it.ex)?" s":""} · repos ${it.rest} s</span></span></div>`}).join("")}</div></section>`;
+      h+=`<section class="card"><div><h3>${esc(p.name)}</h3><p class="hint">${p.items.length} exercices · ${progDur(p)}</p></div><div>${p.items.map(it=>{const e=exo(it.ex);return `<div class="item">${thumb(e)}<span class="grow"><button class="hbtn name" data-act="fiche-open" data-id="${it.ex}">${esc(e.name)}</button><br><span class="small muted">${it.sets} × ${it.reps}${isTimed(it.ex)?" s":""} · repos ${it.rest} s</span></span></div>`}).join("")}</div></section>`;
     });
     h+=bilan(res.programs.reduce((x,p)=>x.concat(p.items.map(i=>({ex:i.ex,sets:i.sets}))),[]),"Bilan musculaire de la semaine");
     h+=`<button class="btn primary block" data-act="co-add" data-v="add">Ajouter à mes programmes</button>`;
